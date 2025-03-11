@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 # Import your custom modules
 from word_processor import WordProcessor
+from example_generator import ExampleGenerator
 
 # Load environment variables
 load_dotenv()
@@ -13,8 +14,9 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize word processor
+# Initialize word processor and example generator
 word_processor = WordProcessor()
+example_generator = ExampleGenerator()
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -49,6 +51,19 @@ def process_batch():
         results[word] = word_processor.process_word(word)
     
     return jsonify(results)
+
+@app.route('/generate-examples', methods=['POST'])
+def generate_examples():
+    """Generate example sentences for a word at different levels"""
+    data = request.get_json()
+    
+    if not data or 'word' not in data:
+        return jsonify({"error": "No word provided"}), 400
+    
+    word = data['word']
+    result = example_generator.generate_examples(word)
+    
+    return jsonify(result)
 
 if __name__ == '__main__':
     # Get port from environment variable or use 5000 as default

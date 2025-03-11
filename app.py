@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # Import your custom modules
 from word_processor import WordProcessor
 from example_generator import ExampleGenerator
+from news_processor import NewsProcessor
 
 # Load environment variables
 load_dotenv()
@@ -17,6 +18,7 @@ CORS(app)  # Enable CORS for all routes
 # Initialize word processor and example generator
 word_processor = WordProcessor()
 example_generator = ExampleGenerator()
+news_processor = NewsProcessor()
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -62,6 +64,24 @@ def generate_examples():
     
     word = data['word']
     result = example_generator.generate_examples(word)
+    
+    return jsonify(result)
+
+@app.route('/summarize-news', methods=['POST'])
+def summarize_news():
+    """Summarize news content, extract a key theme word, and analyze that word"""
+    data = request.get_json()
+    
+    if not data or 'content' not in data:
+        return jsonify({"error": "No news content provided"}), 400
+    
+    news_content = data['content']
+    
+    # Check if content is too short
+    if len(news_content.split()) < 50:
+        return jsonify({"error": "News content too short. Please provide at least 50 words."}), 400
+    
+    result = news_processor.process_news(news_content)
     
     return jsonify(result)
 

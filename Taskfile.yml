@@ -1,0 +1,14 @@
+version: '3'
+
+tasks:
+  # run server
+  run:
+    cmds:
+      - gunicorn app:app -b 0.0.0.0:5000
+
+  build:
+    cmds:
+      - docker build -f cmd/Dockerfile -t namhq1989/worddrop-nlp:latest -t namhq1989/worddrop-nlp:$(git rev-parse --short HEAD) .
+      - docker push namhq1989/worddrop-nlp:latest
+      - docker push namhq1989/worddrop-nlp:$(git rev-parse --short HEAD)
+      

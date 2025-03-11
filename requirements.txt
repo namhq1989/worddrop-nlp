@@ -1,0 +1,9 @@
+flask==3.1.0
+flask-cors==5.0.1
+nltk==3.8.1
+spacy==3.8.2
+textblob==0.17.1
+python-dotenv==1.0.1
+requests==2.32.3
+pyinflect==0.5.1
+pronouncing==0.2.0

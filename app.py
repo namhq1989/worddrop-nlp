@@ -2,11 +2,13 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
+import time
+import signal
 
 # Import your custom modules
 from word_processor import WordProcessor
 from example_generator import ExampleGenerator
-from news_processor import NewsProcessor
+from content_analyzer import ContentAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -15,74 +17,139 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize word processor and example generator
+# Initialize processors
 word_processor = WordProcessor()
 example_generator = ExampleGenerator()
-news_processor = NewsProcessor()
+content_analyzer = ContentAnalyzer()
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint"""
     return jsonify({"status": "ok"})
 
-@app.route('/process-word', methods=['POST'])
-def process_word():
-    """Process a single word"""
-    data = request.get_json()
+@app.route('/analyze-content', methods=['POST'])
+def analyze_content():
+    """
+    Process news content:
+    1. Extract a key descriptive word
+    2. Determine content category
+    3. Analyze the word's linguistic properties
+    4. Generate examples for the word
+    """
     
-    if not data or 'word' not in data:
-        return jsonify({"error": "No word provided"}), 400
+    print("-----------------------------")
+    print("[LOG] Starting analyze-content endpoint")
     
-    word = data['word']
-    result = word_processor.process_word(word)
-    
-    return jsonify(result)
-
-@app.route('/process-batch', methods=['POST'])
-def process_batch():
-    """Process multiple words at once"""
-    data = request.get_json()
-    
-    if not data or 'words' not in data:
-        return jsonify({"error": "No words provided"}), 400
-    
-    words = data['words']
-    results = {}
-    
-    for word in words:
-        results[word] = word_processor.process_word(word)
-    
-    return jsonify(results)
-
-@app.route('/generate-examples', methods=['POST'])
-def generate_examples():
-    """Generate example sentences for a word at different levels"""
-    data = request.get_json()
-    
-    if not data or 'word' not in data:
-        return jsonify({"error": "No word provided"}), 400
-    
-    word = data['word']
-    result = example_generator.generate_examples(word)
-    
-    return jsonify(result)
-
-@app.route('/summarize-news', methods=['POST'])
-def summarize_news():
-    """Summarize news content, extract a key theme word, and analyze that word"""
     data = request.get_json()
     
     if not data or 'content' not in data:
-        return jsonify({"error": "No news content provided"}), 400
+        print("[ERROR] No content provided in request")
+        return jsonify({"error": "No content provided"}), 400
     
     news_content = data['content']
+    print(f"[LOG] Received content of length: {len(news_content)} characters")
     
     # Check if content is too short
-    if len(news_content.split()) < 50:
-        return jsonify({"error": "News content too short. Please provide at least 50 words."}), 400
+    if len(news_content.split()) < 20:
+        print("[ERROR] Content too short")
+        return jsonify({"error": "Content too short. Please provide at least 20 words."}), 400
     
-    result = news_processor.process_news(news_content)
+    # Define timeout for operations
+    TIMEOUT = 15  # seconds
     
+    # Setup default values in case of failures
+    default_word_analysis = {
+        "word": "Unknown",
+        "ipa": None,
+        "pos": ["noun"]
+    }
+    
+    default_examples = {
+        "beginner": {"example": "This is a basic example.", "word": "Unknown"},
+        "intermediate": {"example": "This represents an intermediate level example.", "word": "Unknown"},
+        "advanced": {"example": "The intricate nuances of this advanced example demonstrate comprehensive language mastery.", "word": "Unknown"}
+    }
+    
+    # Setup timeout handler
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Operation timed out")
+    
+    # STEP 1: Extract key word and determine category
+    print("[LOG] Step 1: Extracting key word and category...")
+    start_time = time.time()
+    try:
+        analysis_result = content_analyzer.analyze_content(news_content)
+        print(f"[LOG] Step 1 completed in {time.time() - start_time:.2f}s - Word: '{analysis_result['word']}', Category: '{analysis_result['category']}'")
+    except Exception as e:
+        print(f"[ERROR] Error in content analysis: {str(e)}")
+        return jsonify({"error": f"Failed to analyze content: {str(e)}"}), 500
+    
+    # Get the extracted word
+    extracted_word = analysis_result['word']
+    
+    # STEP 2: Analyze word with timeout protection
+    print(f"[LOG] Step 2: Analyzing word '{extracted_word}'...")
+    start_time = time.time()
+    try:
+        # Set up timeout for this operation
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(TIMEOUT)
+        
+        word_analysis = word_processor.process_word(extracted_word)
+        
+        # Cancel the alarm
+        signal.alarm(0)
+        print(f"[LOG] Step 2 completed in {time.time() - start_time:.2f}s")
+    except TimeoutError:
+        signal.alarm(0)  # Ensure alarm is canceled
+        print(f"[ERROR] Word analysis timed out after {TIMEOUT} seconds")
+        word_analysis = default_word_analysis
+        word_analysis["word"] = extracted_word
+    except Exception as e:
+        signal.alarm(0)  # Ensure alarm is canceled
+        print(f"[ERROR] Exception in word analysis: {str(e)}")
+        word_analysis = default_word_analysis
+        word_analysis["word"] = extracted_word
+    
+    # STEP 3: Generate examples with timeout protection
+    print(f"[LOG] Step 3: Generating examples for '{extracted_word}'...")
+    start_time = time.time()
+    try:
+        # Set up timeout for this operation
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(TIMEOUT)
+        
+        examples_data = example_generator.generate_examples(extracted_word)
+        
+        # Cancel the alarm
+        signal.alarm(0)
+        print(f"[LOG] Step 3 completed in {time.time() - start_time:.2f}s")
+        
+        # Validate examples data structure
+        if not examples_data or not isinstance(examples_data, dict) or 'examples' not in examples_data:
+            print("[ERROR] Invalid example generation result")
+            examples = default_examples
+        else:
+            examples = examples_data.get('examples', default_examples)
+    except TimeoutError:
+        signal.alarm(0)  # Ensure alarm is canceled
+        print(f"[ERROR] Example generation timed out after {TIMEOUT} seconds")
+        examples = default_examples
+    except Exception as e:
+        signal.alarm(0)  # Ensure alarm is canceled
+        print(f"[ERROR] Exception in example generation: {str(e)}")
+        examples = default_examples
+    
+    print("[LOG] All processing completed, preparing response")
+    
+    # Combine all results
+    result = {
+        "category": analysis_result.get('category', 'education'),
+        "word": word_analysis,
+        "examples": examples
+    }
+    
+    print("[LOG] Response ready")
     return jsonify(result)
 
 if __name__ == '__main__':

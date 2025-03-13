@@ -43,6 +43,23 @@ class WordProcessor:
             
         return result
     
+    def classify_word_level(self, frequency):
+        """
+        Classify a word's difficulty level based on its frequency value
+        
+        Args:
+            frequency (float): The word frequency value (typically from Datamuse API)
+            
+        Returns:
+            str: The word level - "beginner", "intermediate", or "advanced"
+        """
+        if frequency >= 20:
+            return "beginner"
+        elif frequency >= 5:
+            return "intermediate"
+        else:
+            return "advanced"
+    
     def get_part_of_speech(self, word):
         """Determine all possible parts of speech for the word with more accuracy"""
         # Dictionary to store the valid parts of speech

@@ -12,10 +12,14 @@ class WordProcessor:
         self.lemmatizer = WordNetLemmatizer()
         
         # Download required NLTK resources if not already available
-        try:
-            nltk.data.find('corpora/wordnet')
-        except LookupError:
-            nltk.download('wordnet')
+        required_resources = ['wordnet', 'averaged_perceptron_tagger', 'punkt']
+        for resource in required_resources:
+            try:
+                nltk.data.find(f'tokenizers/{resource}' if resource == 'punkt' else 
+                             f'taggers/{resource}' if resource == 'averaged_perceptron_tagger' else 
+                             f'corpora/{resource}')
+            except LookupError:
+                nltk.download(resource)
     
     def process_word(self, word):
         """Process a single word and return linguistic information"""

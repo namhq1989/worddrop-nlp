@@ -4,15 +4,23 @@ import os
 from dotenv import load_dotenv
 import time
 import signal
+from datetime import datetime
 
 # Import your custom modules
 from word_processor import WordProcessor
-from example_generator import ExampleGenerator
-from content_analyzer import ContentAnalyzer
-from datamuse_api import DatamuseAPI  # Import the Datamuse API module
+from deepseek_example_generator import DeepSeekExampleGenerator
+from deepseek_content_analyzer import DeepSeekContentAnalyzer
+from datamuse_api import DatamuseAPI
+from openrouter_content_analyzer import OpenRouterContentAnalyzer
+from openrouter_example_generator import OpenRouterExampleGenerator
+from openrouter_usage_tracker import OpenRouterUsageTracker
 
 # Load environment variables
 load_dotenv()
+
+# Get AI provider to use
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'deepseek').lower()
+print(f"Using AI provider: {AI_PROVIDER}")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -20,28 +28,54 @@ CORS(app)  # Enable CORS for all routes
 
 # Initialize processors
 word_processor = WordProcessor()
-example_generator = ExampleGenerator()
-content_analyzer = ContentAnalyzer()
-datamuse_api = DatamuseAPI()  # Initialize the Datamuse API client
+datamuse_api = DatamuseAPI()
+
+# Initialize OpenRouter usage tracker if needed
+openrouter_tracker = None
+if AI_PROVIDER == 'openrouter':
+    openrouter_tracker = OpenRouterUsageTracker()
+
+# Initialize AI-based processors based on configuration
+if AI_PROVIDER == 'openrouter':
+    content_analyzer = OpenRouterContentAnalyzer(openrouter_tracker)
+    example_generator = OpenRouterExampleGenerator(openrouter_tracker)
+    print("Initialized OpenRouter AI processors")
+else:  # Default to DeepSeek
+    content_analyzer = DeepSeekContentAnalyzer()
+    example_generator = DeepSeekExampleGenerator()
+    print("Initialized DeepSeek AI processors")
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint"""
-    return jsonify({"status": "ok"})
+    return jsonify({
+        "status": "ok", 
+        "provider": AI_PROVIDER,
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    })
 
-@app.route('/analyze-content', methods=['POST'])
-def analyze_content():
+@app.route('/openrouter-usage', methods=['GET'])
+def usage_stats():
+    """Get OpenRouter usage statistics"""
+    if AI_PROVIDER != 'openrouter' or not openrouter_tracker:
+        return jsonify({
+            "error": "Usage tracking is only available for the OpenRouter provider",
+            "current_provider": AI_PROVIDER
+        }), 400
+    
+    stats = openrouter_tracker.get_usage_stats()
+    return jsonify(stats)
+
+@app.route('/extract-word', methods=['POST'])
+def extract_word():
     """
-    Process news content:
-    1. Extract a key descriptive word
-    2. Determine content category
-    3. Analyze the word's linguistic properties
-    4. Generate examples for the word
-    5. Get additional information from Datamuse API
+    Extract a key descriptive word from content using the configured AI provider.
+    Takes content as input and returns key descriptive word and category.
     """
     
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print("-----------------------------")
-    print("[LOG] Starting analyze-content endpoint")
+    print(f"[LOG {current_time}] Starting extract-word endpoint (provider: {AI_PROVIDER})")
     
     data = request.get_json()
     
@@ -57,28 +91,66 @@ def analyze_content():
         print("[ERROR] Content too short")
         return jsonify({"error": "Content too short. Please provide at least 20 words."}), 400
     
+    # Extract key word and determine category using configured provider
+    print(f"[LOG] Extracting key word and category using {AI_PROVIDER}...")
+    start_time = time.time()
+    try:
+        analysis_result = content_analyzer.analyze_content(news_content)
+        
+        # Ensure word is in lowercase
+        if 'word' in analysis_result:
+            analysis_result['word'] = analysis_result['word'].lower()
+            
+        # Add provider to the response
+        analysis_result['provider'] = AI_PROVIDER
+            
+        print(f"[LOG] Analysis completed in {time.time() - start_time:.2f}s - Word: '{analysis_result['word']}', Category: '{analysis_result['category']}'")
+        return jsonify(analysis_result)
+    except Exception as e:
+        print(f"[ERROR] Error in content analysis: {str(e)}")
+        return jsonify({"error": f"Failed to analyze content: {str(e)}"}), 500
+
+@app.route('/analyze-word', methods=['POST'])
+def analyze_word():
+    """
+    Analyze a word:
+    1. Validate the word exists in dictionary
+    2. Analyze the word's linguistic properties
+    3. Generate examples for the word using the configured AI provider
+    4. Return comprehensive word information
+    """
+    
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print("-----------------------------")
+    print(f"[LOG {current_time}] Starting analyze-word endpoint (provider: {AI_PROVIDER})")
+    
+    data = request.get_json()
+    
+    if not data or 'word' not in data:
+        print("[ERROR] No word provided in request")
+        return jsonify({"error": "No word provided"}), 400
+    
+    # Get the word to analyze
+    word = data['word'].strip()
+    
+    # Get category if provided, otherwise default to 'education'
+    category = data.get('category', 'education')
+    
+    if not word:
+        print("[ERROR] Empty word provided")
+        return jsonify({"error": "Empty word provided"}), 400
+    
+    print(f"[LOG] Received word: '{word}', category: '{category}'")
+    
     # Define timeout for operations
-    TIMEOUT = 15  # seconds
+    TIMEOUT = 60
     
     # Setup timeout handler
     def timeout_handler(signum, frame):
         raise TimeoutError("Operation timed out")
     
-    # STEP 1: Extract key word and determine category
-    print("[LOG] Step 1: Extracting key word and category...")
-    start_time = time.time()
-    try:
-        analysis_result = content_analyzer.analyze_content(news_content)
-        print(f"[LOG] Step 1 completed in {time.time() - start_time:.2f}s - Word: '{analysis_result['word']}', Category: '{analysis_result['category']}'")
-    except Exception as e:
-        print(f"[ERROR] Error in content analysis: {str(e)}")
-        return jsonify({"error": f"Failed to analyze content: {str(e)}"}), 500
-    
-    # Get the extracted word
-    extracted_word = analysis_result['word']
-    
-    # STEP 2: Validate the word exists in dictionary using Datamuse API
-    print(f"[LOG] Step 2: Validating word '{extracted_word}' in dictionary...")
+    # STEP 1: Validate the word exists in dictionary using Datamuse API
+    print(f"[LOG] Step 1: Validating word '{word}' in dictionary...")
     start_time = time.time()
     try:
         # Set up timeout for this operation
@@ -86,19 +158,19 @@ def analyze_content():
         signal.alarm(TIMEOUT)
         
         # Check if the word exists in the dictionary using Datamuse API
-        dictionary_data = datamuse_api.search_term(extracted_word)
+        dictionary_data = datamuse_api.search_term(word)
         
         # Cancel the alarm
         signal.alarm(0)
         
         # If no definitions were found, the word might not exist in the dictionary
         if not dictionary_data or not dictionary_data.get('definitions'):
-            print(f"[ERROR] Word '{extracted_word}' not found in dictionary")
+            print(f"[ERROR] Word '{word}' not found in dictionary")
             return jsonify({
-                "error": f"The word '{extracted_word}' was not found in our dictionary. Please try a different text."
+                "error": f"The word '{word}' was not found in our dictionary. Please try a different word."
             }), 404
         
-        print(f"[LOG] Step 2 completed in {time.time() - start_time:.2f}s - Word verified in dictionary")
+        print(f"[LOG] Step 1 completed in {time.time() - start_time:.2f}s - Word verified in dictionary")
     except TimeoutError:
         signal.alarm(0)  # Ensure alarm is canceled
         print(f"[ERROR] Dictionary validation timed out after {TIMEOUT} seconds")
@@ -108,19 +180,19 @@ def analyze_content():
         print(f"[ERROR] Exception in dictionary validation: {str(e)}")
         return jsonify({"error": f"Failed to validate word: {str(e)}"}), 500
     
-    # STEP 3: Analyze word with timeout protection
-    print(f"[LOG] Step 3: Analyzing word '{extracted_word}'...")
+    # STEP 2: Analyze word with timeout protection
+    print(f"[LOG] Step 2: Analyzing word '{word}'...")
     start_time = time.time()
     try:
         # Set up timeout for this operation
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(TIMEOUT)
         
-        word_analysis = word_processor.process_word(extracted_word)
+        word_analysis = word_processor.process_word(word)
         
         # Cancel the alarm
         signal.alarm(0)
-        print(f"[LOG] Step 3 completed in {time.time() - start_time:.2f}s")
+        print(f"[LOG] Step 2 completed in {time.time() - start_time:.2f}s")
     except TimeoutError:
         signal.alarm(0)  # Ensure alarm is canceled
         print(f"[ERROR] Word analysis timed out after {TIMEOUT} seconds")
@@ -130,24 +202,27 @@ def analyze_content():
         print(f"[ERROR] Exception in word analysis: {str(e)}")
         return jsonify({"error": f"Failed to analyze word: {str(e)}"}), 500
     
-    # STEP 4: Generate examples with timeout protection
-    print(f"[LOG] Step 4: Generating examples for '{extracted_word}'...")
+    # STEP 3: Generate examples with timeout protection using configured AI provider
+    print(f"[LOG] Step 3: Generating examples for '{word}' using {AI_PROVIDER}...")
     start_time = time.time()
     try:
         # Set up timeout for this operation
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(TIMEOUT)
         
-        examples_data = example_generator.generate_examples(extracted_word)
+        examples_data = example_generator.generate_examples(word)
         
         # Cancel the alarm
         signal.alarm(0)
-        print(f"[LOG] Step 4 completed in {time.time() - start_time:.2f}s")
+        print(f"[LOG] Step 3 completed in {time.time() - start_time:.2f}s")
         
         # Validate examples data structure
         if not examples_data or not isinstance(examples_data, dict) or 'examples' not in examples_data:
             print("[ERROR] Invalid example generation result")
             return jsonify({"error": "Failed to generate examples. Invalid result structure."}), 500
+        
+        # Add provider to examples data
+        examples_data['provider'] = AI_PROVIDER
         
         examples = examples_data.get('examples')
     except TimeoutError:
@@ -176,15 +251,11 @@ def analyze_content():
     
     # Combine all results
     result = {
-        "category": analysis_result.get('category', 'education'),
+        "category": category,
         "word": word_analysis,
-        "examples": examples
+        "examples": examples,
+        "provider": AI_PROVIDER
     }
     
     print("[LOG] Response ready")
     return jsonify(result)
-
-if __name__ == '__main__':
-    # Get port from environment variable or use 5000 as default
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)

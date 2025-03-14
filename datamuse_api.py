@@ -7,30 +7,30 @@ class DatamuseAPI:
         self.base_url = "https://api.datamuse.com/words"
         self.logger = logging.getLogger(__name__)
         
-        # POS mapping from Datamuse format to our application format
+        # Updated POS mapping to match WordProcessor format
         self.pos_mapping = {
-            "adj": "adj",     # Adjective
-            "adv": "adv",     # Adverb
-            "n": "noun",      # Noun
-            "v": "verb",      # Verb
-            "u": "intj",      # Interjection
-            "c": "conj",      # Conjunction
-            "p": "adp",       # Preposition
-            "r": "pron",      # Pronoun
-            "d": "det",       # Determiner
-            "i": "part",      # Particle
-            "num": "num",     # Numeral
-            "pron": "pron",   # Pronoun
-            "prep": "adp",    # Preposition (alternative notation)
-            "conj": "conj",   # Conjunction (alternative notation)
-            "interj": "intj", # Interjection (alternative notation)
-            "proper noun": "propn", # Proper noun
-            "aux": "aux",     # Auxiliary
-            "propn": "propn", # Proper noun
-            "sconj": "sconj", # Subordinating conjunction
-            "sym": "sym",     # Symbol
-            "punct": "punct", # Punctuation
-            "x": "x"          # Other
+            "adj": "adjective",   # Adjective
+            "adv": "adverb",      # Adverb
+            "n": "noun",          # Noun
+            "v": "verb",          # Verb
+            "u": "interjection",  # Interjection
+            "c": "conjunction",   # Conjunction
+            "p": "preposition",   # Preposition
+            "r": "pronoun",       # Pronoun
+            "d": "determiner",    # Determiner
+            "i": "particle",      # Particle
+            "num": "numeral",     # Numeral
+            "pron": "pronoun",    # Pronoun
+            "prep": "preposition", # Preposition (alternative notation)
+            "conj": "conjunction", # Conjunction (alternative notation)
+            "interj": "interjection", # Interjection (alternative notation)
+            "proper noun": "proper_noun", # Proper noun
+            "aux": "auxiliary",   # Auxiliary
+            "propn": "proper_noun", # Proper noun
+            "sconj": "conjunction", # Subordinating conjunction mapped to general conjunction
+            "sym": "symbol",      # Symbol
+            "punct": "punctuation", # Punctuation
+            "x": "other"          # Other
         }
     
     def search_term(self, term):
@@ -123,8 +123,8 @@ class DatamuseAPI:
         if clean_pos in self.pos_mapping.values():
             return clean_pos
         
-        # Map to our format or return 'x' (other) if not found
-        return self.pos_mapping.get(clean_pos, "x")
+        # Map to our format or return 'other' if not found
+        return self.pos_mapping.get(clean_pos, "other")
     
     def _uncapitalize_definition(self, s):
         """Uncapitalize the first letter of definition, preserving annotations"""

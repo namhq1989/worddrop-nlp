@@ -3,7 +3,7 @@ import json
 import time
 from openai import OpenAI
 
-class ExampleGenerator:
+class DeepSeekExampleGenerator:
     def __init__(self):
         """Initialize the Example Generator with DeepSeek API"""
         api_key = os.environ.get('DEEPSEEK_API_KEY')

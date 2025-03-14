@@ -3,7 +3,7 @@ import json
 import time
 from openai import OpenAI
 
-class ContentAnalyzer:
+class DeepSeekContentAnalyzer:
     def __init__(self):
         """Initialize the Content Analyzer with DeepSeek API"""
         api_key = os.environ.get('DEEPSEEK_API_KEY')
@@ -26,8 +26,14 @@ class ContentAnalyzer:
         1. Identify a SINGLE word that best describes what the content is conveying
         2. Determine the most appropriate category from this list: politics, technology, business, science, health, sports, entertainment, education
                 
+        For the word selection:
+        - Focus on basic, primitive parts of speech: nouns (e.g., "technology"), adjectives (e.g., "innovative"), or verbs (e.g., "accelerate") 
+        - Prioritize simpler, more fundamental words over complex derivatives
+        - Try to vary between different parts of speech rather than always using nouns
+        - Be creative to avoid duplicated words between articles
+                
         Output in JSON format ONLY with two fields:
-        - "word": A single word that encapsulates the main theme/topic/message (be creative to avoid duplicated words between articles)
+        - "word": A single word that encapsulates the main theme/topic/message
         - "category": One of the eight categories listed above
                 
         Do not include any additional explanations or comments.
@@ -39,7 +45,7 @@ class ContentAnalyzer:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": "CONTENT: Apple has announced its latest iPhone model featuring enhanced AI capabilities, improved camera quality, and longer battery life. The new model will be available for pre-order next week and is expected to hit stores by the end of the month. Analysts predict strong sales despite the higher price point compared to previous models."},
             {"role": "assistant", "content": json.dumps({
-                "word": "Innovation",
+                "word": "innovation",
                 "category": "technology"
             })}
         ]

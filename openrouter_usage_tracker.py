@@ -25,16 +25,9 @@ class OpenRouterUsageTracker:
         "google/gemma-3-4b-it:free",
         
         # Other models
-        "deepseek/deepseek-r1-zero:free",
-        "qwen/qwq-32b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "microsoft/phi-3-medium-128k-instruct:free",
-        "microsoft/phi-3-mini-128k-instruct:free",
         "mistralai/mistral-nemo:free",
         "mistralai/mistral-7b-instruct:free",
         "mistralai/mistral-small-24b-instruct-2501:free",
-        "cognitivecomputations/dolphin3.0-mistral-24b:free",
-        "cognitivecomputations/dolphin3.0-r1-mistral-24b:free",
     ]
     
     def __init__(self):

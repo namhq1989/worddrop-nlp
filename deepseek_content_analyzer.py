@@ -114,7 +114,7 @@ class DeepSeekContentAnalyzer:
         # Return a default response if all retries fail
         print("[ContentAnalyzer] All retry attempts failed, returning default response")
         default_response = {
-            "word": "Error",
-            "category": "education"  # Default category
+            "word": "",
+            "category": ""  # Default category
         }
         return default_response

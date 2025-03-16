@@ -67,8 +67,8 @@ class OpenRouterContentAnalyzer(OpenRouterHandler):
         # Default response if all attempts fail
         print("[OpenRouterAnalyzer] All attempts failed, returning default response")
         default_response = {
-            "word": "error",
-            "category": "error",
+            "word": "",
+            "category": "",
             "model": "fallback",
             "provider": "openrouter"
         }

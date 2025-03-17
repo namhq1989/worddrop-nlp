@@ -115,7 +115,7 @@ class DeepSeekExampleGenerator:
                     model="deepseek-chat",
                     messages=messages,
                     response_format={'type': 'json_object'},
-                    max_tokens=500,
+                    max_tokens=250,
                     temperature=1.5
                 )
                 

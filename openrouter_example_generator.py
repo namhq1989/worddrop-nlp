@@ -44,7 +44,7 @@ class OpenRouterExampleGenerator(OpenRouterHandler):
         messages = self._format_messages_for_model(model, content, self.system_prompt)
         
         # Call the model
-        result = self.call_model(model, messages, max_tokens=500, retry_count=retry_count)
+        result = self.call_model(model, messages, max_tokens=250, retry_count=retry_count)
         
         if result:
             # Validate the structure and content

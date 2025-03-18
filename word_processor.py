@@ -261,8 +261,8 @@ class WordProcessor:
                             ipa = ipa[:vowel_pos+1] + 'ː' + ipa[vowel_pos+1:]
         
         # Rule 3: Fix consonant clusters 
-        ipa = ipa.replace('tʃ', 't͡ʃ')
-        ipa = ipa.replace('dʒ', 'd͡ʒ')
+        # ipa = ipa.replace('tʃ', 't͡ʃ')
+        # ipa = ipa.replace('dʒ', 'd͡ʒ')
         
         # Rule 4: Convert schwa + r in unstressed syllables to a single character
         ipa = ipa.replace('ər', 'ɚ')

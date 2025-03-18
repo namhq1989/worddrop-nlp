@@ -52,11 +52,13 @@ class OpenRouterContentAnalyzer(OpenRouterHandler):
             
             if "category" in result and result["category"].lower() not in valid_categories:
                 print(f"[OpenRouterAnalyzer] Invalid category '{result['category']}', defaulting to 'education'")
-                result["category"] = "education"
+                result["category"] = ""
             
-            # Ensure word is lowercase
+            # Ensure lowercase
             if "word" in result:
                 result["word"] = result["word"].lower()
+            if "category" in result:
+                result["category"] = result["category"].lower()
                 
             # Add provider to the response
             result["provider"] = "openrouter"

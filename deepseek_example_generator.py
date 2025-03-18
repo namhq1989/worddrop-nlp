@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import httpx
 from openai import OpenAI
 
 class DeepSeekExampleGenerator:
@@ -13,6 +14,7 @@ class DeepSeekExampleGenerator:
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
+            timeout=httpx.Timeout(60.0, read=5.0, write=10.0, connect=2.0),
         )
         
         # Define the static prefix with system prompt and few-shot examples for caching
@@ -116,7 +118,8 @@ class DeepSeekExampleGenerator:
                     messages=messages,
                     response_format={'type': 'json_object'},
                     max_tokens=250,
-                    temperature=1.5
+                    temperature=1.5,
+                    timeout=httpx.Timeout(60.0, connect=10.0) 
                 )
                 
                 content = response.choices[0].message.content

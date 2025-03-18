@@ -100,6 +100,22 @@ def extract_word():
         # Ensure word is in lowercase
         if 'word' in analysis_result:
             analysis_result['word'] = analysis_result['word'].lower()
+
+             # Process the extracted word to check for base forms
+            print(f"[LOG] Processing extracted word: '{analysis_result['word']}'")
+            extracted_word = analysis_result['word']
+            
+            # Use WordProcessor to analyze the word and find base forms
+            word_info = word_processor.process_word(extracted_word)
+            
+            # Check if the word has a different base form as a verb or noun
+            original_word = extracted_word
+            if 'verb' in word_info and 'base' in word_info['verb'] and word_info['verb']['base'] != extracted_word:
+                analysis_result['word'] = word_info['verb']['base']
+                print(f"[LOG] Updated word from '{original_word}' to verb base form '{analysis_result['word']}'")
+            elif 'noun' in word_info and 'base' in word_info['noun'] and word_info['noun']['base'] != extracted_word:
+                analysis_result['word'] = word_info['noun']['base']
+                print(f"[LOG] Updated word from '{original_word}' to noun base form '{analysis_result['word']}'")
             
         # Add provider to the response
         analysis_result['provider'] = AI_PROVIDER
@@ -246,6 +262,17 @@ def analyze_word():
     
     # Add definitions from dictionary data
     word_analysis['definitions'] = dictionary_data.get('definitions', [])
+
+    # Update word to base form if it's different
+    original_word = word
+    if 'verb' in word_analysis and word_analysis['verb'].get('base') and word_analysis['verb']['base'] != word:
+        word = word_analysis['verb']['base']
+        word_analysis['word'] = word
+        print(f"[LOG] Updated word from '{original_word}' to base verb form '{word}'")
+    elif 'noun' in word_analysis and word_analysis['noun'].get('base') and word_analysis['noun']['base'] != word:
+        word = word_analysis['noun']['base']
+        word_analysis['word'] = word
+        print(f"[LOG] Updated word from '{original_word}' to base noun form '{word}'")
     
     print("[LOG] All processing completed, preparing response")
     

@@ -2,6 +2,7 @@ import os
 import json
 import time
 import re
+import httpx
 from openai import OpenAI
 
 class OpenRouterHandler:
@@ -18,6 +19,7 @@ class OpenRouterHandler:
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://openrouter.ai/api/v1",
+            timeout=httpx.Timeout(60.0, read=5.0, write=10.0, connect=2.0),
         )
         
         # Store the usage tracker
@@ -130,23 +132,15 @@ class OpenRouterHandler:
                     "extra_headers": {
                         "HTTP-Referer": self.site_url,
                         "X-Title": self.site_name,
-                    }
+                    },
+                    "timeout": httpx.Timeout(60.0, connect=10.0)
                 }
                 
                 # Add response_format parameter only for non-Google models
                 if response_format:
                     request_params["response_format"] = response_format
                 
-                # Set timeout for models known to be slower
-                if "qwen" in model.lower():
-                    print(f"[OpenRouter] Using longer timeout for Qwen model")
-                    import httpx
-                    response = self.client.chat.completions.create(
-                        **request_params,
-                        timeout=httpx.Timeout(60.0, connect=10.0)
-                    )
-                else:
-                    response = self.client.chat.completions.create(**request_params)
+                response = self.client.chat.completions.create(**request_params)
                 
                 # Record successful usage
                 self.usage_tracker.record_usage(model)

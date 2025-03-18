@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import httpx
 from openai import OpenAI
 
 class DeepSeekContentAnalyzer:
@@ -13,6 +14,7 @@ class DeepSeekContentAnalyzer:
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
+            timeout=httpx.Timeout(60.0, read=5.0, write=10.0, connect=2.0),
         )
         
         # Define the static system prompt for caching benefit
@@ -73,7 +75,8 @@ class DeepSeekContentAnalyzer:
                     messages=messages,
                     response_format={'type': 'json_object'},
                     max_tokens=150,  # Limit tokens since we only need a short summary, word, and category
-                    temperature=0.3  # Lower temperature for more consistent, predictable outputs
+                    temperature=0.3,  # Lower temperature for more consistent, predictable outputs
+                    timeout=httpx.Timeout(60.0, connect=10.0)
                 )
                 
                 api_call_time = time.time() - start_time
@@ -100,7 +103,13 @@ class DeepSeekContentAnalyzer:
                     
                     if "category" in result and result["category"].lower() not in valid_categories:
                         print(f"[ContentAnalyzer] Invalid category '{result['category']}', defaulting to 'education'")
-                        result["category"] = "education"
+                        result["category"] = ""
+
+                    # Ensure lowercase
+                    if "word" in result:
+                        result["word"] = result["word"].lower()
+                    if "category" in result:
+                        result["category"] = result["category"].lower()
                     
                     print(f"[ContentAnalyzer] Successfully extracted word: '{result.get('word', 'unknown')}' and category: '{result.get('category', 'unknown')}'")
                     return result
@@ -115,6 +124,6 @@ class DeepSeekContentAnalyzer:
         print("[ContentAnalyzer] All retry attempts failed, returning default response")
         default_response = {
             "word": "",
-            "category": ""  # Default category
+            "category": ""
         }
         return default_response

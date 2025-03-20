@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies and Gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Download NLTK data
 RUN python -m nltk.downloader wordnet
@@ -25,7 +25,10 @@ RUN python -m spacy download en_core_web_md
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 5000
+ENV PORT=3000
+EXPOSE ${PORT}
 
-# Command to run the application
-CMD ["python", "app.py"]
+# Command to run the application in production mode with Gunicorn
+CMD ["sh", "-c", "gunicorn --workers=4 --bind 0.0.0.0:${PORT} --timeout 120 app:app"]
+
+

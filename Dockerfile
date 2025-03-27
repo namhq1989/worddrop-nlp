@@ -29,6 +29,6 @@ ENV PORT=3000
 EXPOSE ${PORT}
 
 # Command to run the application in production mode with Gunicorn
-CMD ["sh", "-c", "gunicorn --workers=4 --bind 0.0.0.0:${PORT} --timeout 120 app:app"]
+CMD ["sh", "-c", "gunicorn --workers=1 --bind 0.0.0.0:${PORT} --timeout 120 app:app"]
 
 

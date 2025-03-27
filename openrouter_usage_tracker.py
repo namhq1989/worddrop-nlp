@@ -9,6 +9,7 @@ import threading
 OPENROUTER_FREE_REQUESTS_PER_MINUTE = 20
 OPENROUTER_FREE_REQUESTS_PER_DAY = 200
 OPENROUTER_RESET_CHECK_INTERVAL = 10  # Seconds between checking for reset periods
+OPENROUTER_TIMEOUT_RETRY_DELAY = 60  # Wait 1 minute before retrying a model that timed out
 
 class OpenRouterUsageTracker:
     """
@@ -39,6 +40,8 @@ class OpenRouterUsageTracker:
                                                 OPENROUTER_FREE_REQUESTS_PER_DAY))
         self.reset_check_interval = int(os.environ.get('OPENROUTER_RESET_CHECK_INTERVAL',
                                                     OPENROUTER_RESET_CHECK_INTERVAL))
+        self.timeout_retry_delay = int(os.environ.get('OPENROUTER_TIMEOUT_RETRY_DELAY',
+                                                   OPENROUTER_TIMEOUT_RETRY_DELAY))
         
         # Use hardcoded models
         self.available_models = self.AVAILABLE_MODELS.copy()
@@ -62,7 +65,9 @@ class OpenRouterUsageTracker:
                 'minute_count': 0,           # Requests in the current minute
                 'last_minute': datetime.now().minute,
                 'last_used': datetime.now() - timedelta(hours=1),  # Start with models being unused for 1 hour
-                'enabled': True              # Whether the model is currently enabled
+                'enabled': True,              # Whether the model is currently enabled
+                'disabled_reason': None,      # Why the model is disabled
+                'disabled_until': None        # When to re-enable the model
             }
         
         # Start a background thread to reset counters
@@ -79,7 +84,13 @@ class OpenRouterUsageTracker:
                     with self.lock:
                         for model in self.usage:
                             self.usage[model]['day_count'] = 0
-                            self.usage[model]['enabled'] = True
+                            
+                            # Only re-enable if it was disabled due to rate limiting
+                            if self.usage[model]['disabled_reason'] == 'daily_limit':
+                                self.usage[model]['enabled'] = True
+                                self.usage[model]['disabled_reason'] = None
+                                self.usage[model]['disabled_until'] = None
+                                
                         self.last_reset_day = now.day
                         print(f"[OpenRouterUsageTracker] Reset daily counters at {now}")
                 
@@ -90,6 +101,18 @@ class OpenRouterUsageTracker:
                         with self.lock:
                             self.usage[model]['minute_count'] = 0
                             self.usage[model]['last_minute'] = current_minute
+                
+                # Check if any timed-out models can be re-enabled
+                for model in self.usage:
+                    if (not self.usage[model]['enabled'] and 
+                        self.usage[model]['disabled_reason'] == 'timeout' and
+                        self.usage[model]['disabled_until'] and 
+                        now >= self.usage[model]['disabled_until']):
+                        with self.lock:
+                            self.usage[model]['enabled'] = True
+                            self.usage[model]['disabled_reason'] = None
+                            self.usage[model]['disabled_until'] = None
+                            print(f"[OpenRouterUsageTracker] Re-enabling model {model} after timeout period")
                 
                 # Sleep for the configured interval before checking again
                 time.sleep(self.reset_check_interval)
@@ -123,8 +146,9 @@ class OpenRouterUsageTracker:
             best_model = None
             best_score = -1
             
+            # First pass - prioritize Mistral models before Google models to reduce timeouts
             for model in self.available_models:
-                # Skip disabled models (reached daily limit)
+                # Skip disabled models
                 if not self.usage[model]['enabled']:
                     continue
                 
@@ -135,43 +159,69 @@ class OpenRouterUsageTracker:
                 # Higher score is better:
                 # - Fewer requests in current minute (max is the per-minute limit)
                 # - Longer time since last use
+                # - Add a bonus for Mistral models since they seem more reliable
                 minute_factor = self.requests_per_minute - self.usage[model]['minute_count']
                 time_factor = min(time_since_use / 60, 10)  # Cap at 10 for 10+ minutes unused
                 
-                score = (minute_factor * 10) + time_factor
+                # Add a bonus for Mistral models to prioritize them over Google models
+                provider_bonus = 100 if 'mistral' in model.lower() else 0
+                
+                score = (minute_factor * 10) + time_factor + provider_bonus
                 
                 if score > best_score:
                     best_score = score
                     best_model = model
             
-            # If all models are disabled, choose the first one as fallback
+            # If all models are disabled, choose a Mistral model as fallback
             if best_model is None and self.available_models:
-                print("[OpenRouterUsageTracker] WARNING: All models have reached daily limits. Using first model anyway.")
+                # Try to find a Mistral model first
+                for model in self.available_models:
+                    if 'mistral' in model.lower():
+                        print(f"[OpenRouterUsageTracker] WARNING: All models have restrictions. Using {model} as fallback.")
+                        return model
+                
+                # If no Mistral model found, use the first available
                 best_model = self.available_models[0]
+                print(f"[OpenRouterUsageTracker] WARNING: All models have restrictions. Using {best_model} as fallback.")
             
             return best_model
     
-    def disable_model(self, model):
+    def disable_model(self, model, reason='unknown'):
         """
         Explicitly disable a model, typically after receiving a rate limit error.
         
         Args:
             model (str): The model ID to disable
+            reason (str): Why the model is being disabled
         """
         with self.lock:
             if model in self.usage:
                 self.usage[model]['enabled'] = False
-                print(f"[OpenRouterUsageTracker] Model {model} has been disabled due to rate limiting")
+                self.usage[model]['disabled_reason'] = reason
+                
+                # Set a re-enable time if it's a timeout
+                if reason == 'timeout':
+                    self.usage[model]['disabled_until'] = datetime.now() + timedelta(seconds=self.timeout_retry_delay)
+                    print(f"[OpenRouterUsageTracker] Model {model} has been disabled due to timeout. Will retry in {self.timeout_retry_delay/60} minutes.")
+                else:
+                    self.usage[model]['disabled_reason'] = 'daily_limit'
+                    print(f"[OpenRouterUsageTracker] Model {model} has been disabled due to rate limiting")
             else:
                 # Initialize tracking for new models
+                disabled_until = None
+                if reason == 'timeout':
+                    disabled_until = datetime.now() + timedelta(seconds=self.timeout_retry_delay)
+                
                 self.usage[model] = {
-                    'day_count': self.requests_per_day,  # Set to limit to ensure it stays disabled
-                    'minute_count': self.requests_per_minute,
+                    'day_count': self.requests_per_day if reason == 'daily_limit' else 0,
+                    'minute_count': self.requests_per_minute if reason == 'rate_limit' else 0,
                     'last_minute': datetime.now().minute,
                     'last_used': datetime.now(),
-                    'enabled': False
+                    'enabled': False,
+                    'disabled_reason': reason,
+                    'disabled_until': disabled_until
                 }
-                print(f"[OpenRouterUsageTracker] Added and disabled new model {model}")
+                print(f"[OpenRouterUsageTracker] Added and disabled new model {model} due to {reason}")
     
     def record_usage(self, model):
         """
@@ -191,7 +241,9 @@ class OpenRouterUsageTracker:
                     'minute_count': 0,
                     'last_minute': datetime.now().minute,
                     'last_used': datetime.now(),
-                    'enabled': True
+                    'enabled': True,
+                    'disabled_reason': None,
+                    'disabled_until': None
                 }
             
             # Update usage counters
@@ -202,6 +254,7 @@ class OpenRouterUsageTracker:
             # Check if model has reached daily limit
             if self.usage[model]['day_count'] >= self.requests_per_day:
                 self.usage[model]['enabled'] = False
+                self.usage[model]['disabled_reason'] = 'daily_limit'
                 print(f"[OpenRouterUsageTracker] Model {model} has reached its daily limit of {self.requests_per_day} requests")
             
             return self.usage[model]['enabled']
@@ -226,8 +279,8 @@ class OpenRouterUsageTracker:
                     'last_used': self.usage[model]['last_used'].strftime('%Y-%m-%d %H:%M:%S'),
                     'enabled': self.usage[model]['enabled'],
                     'percent_daily_limit': round((self.usage[model]['day_count'] / self.requests_per_day) * 100, 1),
-                    'disabled_reason': 'Reached daily limit' if self.usage[model]['day_count'] >= self.requests_per_day else 
-                                      ('Manually disabled' if not self.usage[model]['enabled'] else 'N/A')
+                    'disabled_reason': self.usage[model]['disabled_reason'] or 'N/A',
+                    'disabled_until': self.usage[model]['disabled_until'].strftime('%Y-%m-%d %H:%M:%S') if self.usage[model]['disabled_until'] else 'N/A'
                 }
             
             return stats
@@ -247,7 +300,9 @@ class OpenRouterUsageTracker:
                     'minute_count': 0,
                     'last_minute': datetime.now().minute,
                     'last_used': datetime.now() - timedelta(hours=1),
-                    'enabled': True
+                    'enabled': True,
+                    'disabled_reason': None,
+                    'disabled_until': None
                 }
                 print(f"[OpenRouterUsageTracker] Added new model: {model}")
     
@@ -264,3 +319,43 @@ class OpenRouterUsageTracker:
                 if model in self.usage:
                     del self.usage[model]
                 print(f"[OpenRouterUsageTracker] Removed model: {model}")
+                
+    def disable_provider(self, provider_name):
+        """
+        Disable all models from a specific provider (e.g., 'google', 'mistralai')
+        
+        Args:
+            provider_name (str): The provider name to disable
+        """
+        with self.lock:
+            disabled_count = 0
+            for model in self.usage:
+                if provider_name.lower() in model.lower():
+                    if self.usage[model]['enabled']:
+                        self.usage[model]['enabled'] = False
+                        self.usage[model]['disabled_reason'] = 'provider_issue'
+                        self.usage[model]['disabled_until'] = datetime.now() + timedelta(seconds=self.timeout_retry_delay)
+                        disabled_count += 1
+            
+            if disabled_count > 0:
+                print(f"[OpenRouterUsageTracker] Disabled {disabled_count} models from provider {provider_name}")
+                
+    def enable_provider(self, provider_name):
+        """
+        Enable all models from a specific provider (e.g., 'google', 'mistralai')
+        
+        Args:
+            provider_name (str): The provider name to enable
+        """
+        with self.lock:
+            enabled_count = 0
+            for model in self.usage:
+                if provider_name.lower() in model.lower():
+                    if not self.usage[model]['enabled'] and self.usage[model]['disabled_reason'] == 'provider_issue':
+                        self.usage[model]['enabled'] = True
+                        self.usage[model]['disabled_reason'] = None
+                        self.usage[model]['disabled_until'] = None
+                        enabled_count += 1
+            
+            if enabled_count > 0:
+                print(f"[OpenRouterUsageTracker] Enabled {enabled_count} models from provider {provider_name}")

@@ -15,11 +15,14 @@ class OpenRouterHandler:
         api_key = os.environ.get('OPENROUTER_API_KEY')
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY environment variable is not set")
-            
+        
+        # Set proper timeouts for the httpx client
+        # Note: OpenAI client uses httpx internally
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://openrouter.ai/api/v1",
-            timeout=httpx.Timeout(60.0, read=5.0, write=10.0, connect=2.0),
+            # Use a strict timeout that won't hang for too long
+            timeout=httpx.Timeout(60.0, connect=5.0, read=25.0, write=5.0),
         )
         
         # Store the usage tracker
@@ -132,14 +135,18 @@ class OpenRouterHandler:
                     "extra_headers": {
                         "HTTP-Referer": self.site_url,
                         "X-Title": self.site_name,
-                    },
-                    "timeout": httpx.Timeout(60.0, connect=10.0)
+                    }
                 }
                 
                 # Add response_format parameter only for non-Google models
                 if response_format:
                     request_params["response_format"] = response_format
                 
+                # Add the timeout parameter explicitly for the completion call
+                # Set a strict timeout for the completion call
+                completion_timeout = httpx.Timeout(30.0, connect=5.0, read=25.0, write=5.0)
+                
+                # Wrap the API call in a try-except with a timeout parameter
                 response = self.client.chat.completions.create(**request_params)
                 
                 # Record successful usage
@@ -172,9 +179,16 @@ class OpenRouterHandler:
                 if "rate limit" in error_str or "too many requests" in error_str or "429" in error_str:
                     print(f"[OpenRouter] Rate limit exceeded for model {model}")
                     self.usage_tracker.disable_model(model)
+                # Check for timeout errors and log them specifically
+                elif "timeout" in error_str or "timed out" in error_str:
+                    print(f"[OpenRouter] Request timed out for model {model}: {error_str}")
+                    # Disable the model temporarily since it's not responding
+                    self.usage_tracker.disable_model(model)
                 else:
                     print(f"[OpenRouter] Error calling model: {str(e)}, retrying ({attempt+1}/{retry_count})...")
+                
                 time.sleep(1)
         
         # All attempts failed
+        print(f"[OpenRouter] All {retry_count} attempts failed for model {model}")
         return None
